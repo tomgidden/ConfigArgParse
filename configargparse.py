@@ -174,6 +174,7 @@ class DefaultConfigFileParser(ConfigFileParser):
 
     def parse(self, stream):
         # see ConfigFileParser.parse docstring
+        append_keys = getattr(self, '_append_keys', set())
 
         items = OrderedDict()
         for i, line in enumerate(stream):
@@ -205,7 +206,19 @@ class DefaultConfigFileParser(ConfigFileParser):
                         value = [elem.strip() for elem in value[1:-1].split(",")]
                 if comment:
                     comment = comment.strip()[1:].strip()
-                items[key] = value
+
+                # Handle duplicate keys for append actions
+                if key in append_keys and key in items:
+                    existing_value = items[key]
+                    if isinstance(existing_value, list):
+                        # Already a list, append the new value
+                        existing_value.append(value)
+                    else:
+                        # Convert to list with both values
+                        items[key] = [existing_value, value]
+                else:
+                    # Regular key or first occurrence, store as-is
+                    items[key] = value
             else:
                 raise ConfigFileParserException(
                     "Unexpected line {} in {}: {}".format(
@@ -1008,12 +1021,26 @@ class ArgumentParser(argparse.ArgumentParser):
         # parse each config file
         for stream in reversed(config_streams):
             try:
+                # Set append keys on the parser instance for this parsing session
+                self._config_file_parser._append_keys = {
+                    config_key
+                    for action in self._actions
+                    for config_key in self.get_possible_config_keys(action)
+                    if isinstance(action, argparse._AppendAction)
+                }
                 config_items = self._config_file_parser.parse(stream)
             except ConfigFileParserException as e:
                 self.error(str(e))
             finally:
                 if hasattr(stream, "close"):
                     stream.close()
+
+            # ensure single values for append actions are converted to lists
+            for key, value in config_items.items():
+                if key in known_config_keys:
+                    action = known_config_keys[key]
+                    if isinstance(action, argparse._AppendAction) and not isinstance(value, list):
+                        config_items[key] = [value]
 
             # add each config item to the commandline unless it's there already
             config_args = []

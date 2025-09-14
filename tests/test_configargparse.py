@@ -149,7 +149,7 @@ class TestBasicUseCases(TestCase):
         self.assertListEqual(ns.filenames, ["file1.txt", "file2.txt"])
         self.assertEqual(ns.arg_x, True)
         self.assertEqual(ns.y1, 10)
-        self.assertEqual(ns.arg_z, [40])
+        self.assertEqual(ns.arg_z, [30, 40])
         self.assertEqual(ns.foo, True)
 
         self.assertRegex(
@@ -158,7 +158,7 @@ class TestBasicUseCases(TestCase):
             "Config File \\(method arg\\):\n"
             "  arg-x: \\s+ True\n"
             "  arg-y: \\s+ 10\n"
-            "  arg-z: \\s+ 40\n"
+            "  arg-z: \\s+ \\['30', '40'\\]\n"
             "  foo: \\s+ True\n",
         )
 
@@ -612,7 +612,7 @@ class TestBasicUseCases(TestCase):
             "Config File \\(method arg\\):\n"
             "  y: \\s+ 12.1\n"
             "  b: \\s+ True\n"
-            "  a: \\s+ 33\n"
+            "  a: \\s+ \\['33'\\]\n"
             "  z: \\s+ z 1\n",
         )
         self.assertEqual(ns.m, [["1", "2", "3"], ["4", "5", "6"]])
@@ -1320,6 +1320,36 @@ class TestMisc(TestCase):
         p = self.parser
         options = p.parse(args=[])
         self.assertDictEqual(vars(options), {})
+
+    def testConfigFileMultipleAppendArgs(self):
+        """Test multiple invocations of append arguments in config file (.conf format)"""
+        self.initParser()
+        self.add_arg("--url", action="append", help="URL to process")
+        self.add_arg("--flag", action="store_true")
+
+        # Test multiple --url entries in config file (like CLI format)
+        ns = self.parse(
+            args="",
+            config_file_contents="""--url x
+--url y
+--url z
+--flag""",
+        )
+
+        # Should accumulate all URLs, not just the last one
+        self.assertEqual(ns.url, ["x", "y", "z"])
+        self.assertEqual(ns.flag, True)
+
+        # Test single --url entry in config file should also be a list
+        ns = self.parse(
+            args="",
+            config_file_contents="""--url single
+--flag""",
+        )
+
+        # Single append argument should still be a list
+        self.assertEqual(ns.url, ["single"])
+        self.assertEqual(ns.flag, True)
 
     def testConfigOpenFuncError(self):
         # test OSError
